@@ -1,24 +1,24 @@
-variable "lambda_role" {}
-variable "table_name" {}
-
-resource "aws_lambda_function" "contact" {
-  function_name = "baron-contact-handler"
-  runtime       = "python3.12"
-  handler       = "handler.lambda_handler"
-  role          = var.lambda_role
-  filename      = "lambda/function.zip"
-
-  environment {
-    variables = {
-      TABLE_NAME = var.table_name
-    }
-  }
+module "s3" {
+  source      = "./modules/s3"
+  bucket_name = var.bucket_name
 }
 
-output "lambda_name" {
-  value = aws_lambda_function.contact.function_name
+module "dynamodb" {
+  source = "./modules/dynamodb"
 }
 
-output "lambda_invoke_arn" {
-  value = aws_lambda_function.contact.invoke_arn
+module "iam" {
+  source = "./modules/iam"
+}
+
+module "lambda" {
+  source       = "./modules/lambda"
+  lambda_role  = module.iam.lambda_role_arn
+  table_name   = module.dynamodb.table_name
+}
+
+module "apigateway" {
+  source            = "./modules/apigateway"
+  lambda_invoke_arn = module.lambda.lambda_invoke_arn
+  lambda_name       = module.lambda.lambda_name
 }

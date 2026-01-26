@@ -1,24 +1,51 @@
-variable "lambda_role" {}
-variable "table_name" {}
+variable "lambda_invoke_arn" {}
+variable "lambda_name" {}
 
-resource "aws_lambda_function" "contact" {
-  function_name = "baron-contact-handler"
-  runtime       = "python3.12"
-  handler       = "handler.lambda_handler"
-  role          = var.lambda_role
-  filename      = "lambda/function.zip"
-
-  environment {
-    variables = {
-      TABLE_NAME = var.table_name
-    }
-  }
+resource "aws_api_gateway_rest_api" "api" {
+  name = "baron-contact-api"
 }
 
-output "lambda_name" {
-  value = aws_lambda_function.contact.function_name
+resource "aws_api_gateway_resource" "contact" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  parent_id   = aws_api_gateway_rest_api.api.root_resource_id
+  path_part   = "contact"
 }
 
-output "lambda_invoke_arn" {
-  value = aws_lambda_function.contact.invoke_arn
+resource "aws_api_gateway_method" "post" {
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.contact.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "lambda" {
+  rest_api_id             = aws_api_gateway_rest_api.api.id
+  resource_id             = aws_api_gateway_resource.contact.id
+  http_method             = aws_api_gateway_method.post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = var.lambda_invoke_arn
+}
+
+resource "aws_lambda_permission" "allow_apigw" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
+}
+
+resource "aws_api_gateway_deployment" "deploy" {
+  depends_on  = [aws_api_gateway_integration.lambda]
+  rest_api_id = aws_api_gateway_rest_api.api.id
+}
+
+resource "aws_api_gateway_stage" "prod" {
+  stage_name    = "prod"
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  deployment_id = aws_api_gateway_deployment.deploy.id
+}
+
+output "invoke_url" {
+  value = aws_api_gateway_stage.prod.invoke_url
 }
